@@ -1,4 +1,3 @@
 === Simulated Patient Records ===
-PATIENT_ID: "DATA"
-PATIENT_ID: "DATA"
-PATIENT1: "Diabetes"
+PATIENT_Jessica: "Elevated sugar levels"
+PATIENT_Dawit: "He has a fever"

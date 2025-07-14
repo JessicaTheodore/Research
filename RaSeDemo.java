@@ -5,11 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.text.SimpleDateFormat;
-import java.util.Date;
 
 /**
  * RaSe (Ransom Sentinel) Medical Record DEMO System
  * 
+ * + Production: Uses complex math (Galois Fields, polynomial interpolation)  
+ * - Demo: Uses string operations to visualize the flow
  * Simulates ransomware-resilient healthcare records with:
  * - Reed-Solomon sharding simulation
  * - Comprehensive audit logging

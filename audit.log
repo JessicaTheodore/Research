@@ -1,11 +1,18 @@
 === RaSe DEMO Audit Log ===
 Format: [Timestamp] [User] [Action] [Status] [Details]
 =================================
-[2025-07-14 14:50:39] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_ID - Created 6 shards (4+2)
-[2025-07-14 14:50:39] [doctor] [STORE] [SUCCESS] PATIENT_ID - Data length: 6
-[2025-07-14 14:51:24] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_ID - Created 6 shards (4+2)
-[2025-07-14 14:51:24] [doctor] [STORE] [SUCCESS] PATIENT_ID - Data length: 6
-[2025-07-14 14:51:40] [SYSTEM] [SHARDING] [SUCCESS] PATIENT1 - Created 6 shards (4+2)
-[2025-07-14 14:51:40] [doctor] [STORE] [SUCCESS] PATIENT1 - Data length: 10
-[2025-07-14 15:05:37] [ATTACKER] [CORRUPT] [FAILED] patient1 - Corrupted 2/6 shards
-[2025-07-14 15:05:37] [SYSTEM] [RECOVER] [SUCCESS] patient1 - Recovered from attack
+[2025-07-14 15:13:59] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_Jessica - Created 6 shards (4+2)
+[2025-07-14 15:13:59] [doctor] [STORE] [SUCCESS] PATIENT_Jessica - Data length: 23
+[2025-07-14 15:14:58] [admin] [RETRIEVE] [SUCCESS] PATIENT_Jessica - Recovered 23 bytes
+[2025-07-14 15:15:20] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_Dawit - Created 6 shards (4+2)
+[2025-07-14 15:15:20] [doctor] [STORE] [SUCCESS] PATIENT_Dawit - Data length: 16
+[2025-07-14 15:15:33] [ATTACKER] [CORRUPT] [FAILED] PATIENT_Dawit - Corrupted 2/6 shards
+[2025-07-14 15:15:33] [SYSTEM] [RECOVER] [SUCCESS] PATIENT_Dawit - Recovered from attack
+[2025-07-14 15:16:00] [admin] [RETRIEVE] [SUCCESS] PATIENT_Dawit - Recovered 16 bytes
+[2025-07-14 15:17:40] [admin] [RETRIEVE] [FAILED] PATIENT_Jess - Patient not found
+[2025-07-14 15:17:46] [admin] [RETRIEVE] [SUCCESS] PATIENT_Jessica - Recovered 23 bytes
+[2025-07-14 15:19:09] [SYSTEM] [STATE_CHANGE] [SUCCESS]  - New state: NORMAL
+[2025-07-14 15:19:16] [SYSTEM] [STATE_CHANGE] [SUCCESS]  - New state: UNDER_ATTACK
+[2025-07-14 15:19:38] [admin] [RETRIEVE] [FAILED] PATRIENT_Jessica - Patient not found
+[2025-07-14 15:20:01] [SYSTEM] [STATE_CHANGE] [SUCCESS]  - New state: NORMAL
+[2025-07-14 15:20:06] [admin] [RETRIEVE] [FAILED] PATRIENT_Jessica - Patient not found
