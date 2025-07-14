@@ -16,6 +16,7 @@ import java.text.SimpleDateFormat;
  * - Comprehensive audit logging
  * - Patient records stored in 'patient_records.sim' file
  * - Attack/failure simulation modes
+ * - Change tracking with detailed modification logs
  * 
  * DEMO COMMANDS:
  * 
@@ -31,14 +32,17 @@ import java.text.SimpleDateFormat;
  * 4. View Audit Log:
  *    audit viewlog
  * 
- * 5. View All Patient IDs:
+ * 5. View Change Log:
+ *    audit viewchanges
+ * 
+ * 6. View All Patient IDs:
  *    audit listpatients
  * 
- * 6. Simulate System Failure:
+ * 7. Simulate System Failure:
  *    system setstate UNDER_ATTACK
  *    system setstate NORMAL
  * 
- * 7. Exit:
+ * 8. Exit:
  *    exit
  */
 
@@ -46,6 +50,7 @@ public class RaSeDemo {
     // File paths
     private static final String AUDIT_LOG = "audit.log";
     private static final String PATIENT_RECORDS = "patient_records.sim";
+    private static final String CHANGES_LOG = "changes.log";
     
     // Formatting
     private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -57,6 +62,10 @@ public class RaSeDemo {
     
     // Patient records simulation
     private Map<String, String> patientRecords = new HashMap<>();
+    
+    // Change tracking
+    private Map<String, String> previousRecords = new HashMap<>();
+    private int changeSequence = 0;
     
     /**
      * Initialize system files
@@ -81,6 +90,15 @@ public class RaSeDemo {
                     "=== Simulated Patient Records ===\n",
                     StandardOpenOption.CREATE);
             }
+            
+            // Create changes log header
+            if (!Files.exists(Path.of(CHANGES_LOG))) {
+                Files.writeString(Path.of(CHANGES_LOG),
+                    "=== RaSe DEMO Change Tracking Log ===\n" +
+                    "Format: [Timestamp] [Change#] [User] [Patient] [Action] [Previous] -> [New]\n" +
+                    "=====================================================================\n",
+                    StandardOpenOption.CREATE);
+            }
         } catch (IOException e) {
             System.err.println("Failed to initialize files: " + e.getMessage());
         }
@@ -95,7 +113,11 @@ public class RaSeDemo {
             for (String line : lines) {
                 if (line.contains(":")) {
                     String[] parts = line.split(":", 2);
-                    patientRecords.put(parts[0].trim(), parts[1].trim());
+                    String patientId = parts[0].trim();
+                    String data = parts[1].trim();
+                    patientRecords.put(patientId, data);
+                    // Initialize previous records for change tracking
+                    previousRecords.put(patientId, data);
                 }
             }
         } catch (IOException e) {
@@ -124,6 +146,29 @@ public class RaSeDemo {
     }
     
     /**
+     * Log a change to the change tracking log
+     */
+    private void logChange(String user, String patientId, String action, String previousData, String newData) {
+        changeSequence++;
+        
+        String changeEntry = String.format("[%s] [CHANGE#%04d] [%s] [%s] [%s] [%s] -> [%s]\n",
+            dateFormat.format(new Date()),
+            changeSequence,
+            user,
+            patientId,
+            action,
+            previousData != null ? previousData : "NULL",
+            newData != null ? newData : "NULL");
+            
+        try {
+            Files.writeString(Path.of(CHANGES_LOG), changeEntry, StandardOpenOption.APPEND);
+            System.out.println("CHANGE: " + changeEntry.trim());
+        } catch (IOException e) {
+            System.err.println("Failed to write to change log!");
+        }
+    }
+    
+    /**
      * Simulate Reed-Solomon storage
      */
     private void simulateSharding(String patientId, String data) {
@@ -147,23 +192,38 @@ public class RaSeDemo {
             return;
         }
         
+        // Get previous data for change tracking
+        String previousData = patientRecords.get(patientId);
+        
+        // Determine action type
+        String action = previousData == null ? "CREATE" : "UPDATE";
+        
         // Store in memory
         patientRecords.put(patientId, data);
+        
+        // Log the change
+        logChange(user, patientId, action, previousData, data);
+        
+        // Update previous records tracking
+        previousRecords.put(patientId, data);
         
         // Simulate RS encoding
         simulateSharding(patientId, data);
         
         // Update patient records file
         try {
-            Files.writeString(Path.of(PATIENT_RECORDS),
-                patientId + ": " + data + "\n",
-                StandardOpenOption.APPEND);
+            // Rewrite entire file to reflect current state
+            StringBuilder fileContent = new StringBuilder("=== Simulated Patient Records ===\n");
+            for (Map.Entry<String, String> entry : patientRecords.entrySet()) {
+                fileContent.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+            }
+            Files.writeString(Path.of(PATIENT_RECORDS), fileContent.toString());
         } catch (IOException e) {
             System.err.println("Warning: Could not update patient records file");
         }
         
-        System.out.println("DEMO: Stored record for " + patientId);
-        logAction(user, "STORE", patientId, "Data length: " + data.length(), true);
+        System.out.println("DEMO: " + action + " record for " + patientId);
+        logAction(user, "STORE", patientId, action + " - Data length: " + data.length(), true);
     }
     
     /**
@@ -200,10 +260,17 @@ public class RaSeDemo {
         System.out.println("DEMO: Corrupting 2 shards (still recoverable)");
         logAction("ATTACKER", "CORRUPT", patientId, "Corrupted 2/6 shards", false);
         
+        // Log the attack as a change attempt
+        String currentData = patientRecords.get(patientId);
+        logChange("ATTACKER", patientId, "CORRUPT_ATTEMPT", currentData, "CORRUPTED_DATA");
+        
         // Demonstrate recovery
         System.out.println("DEMO: System detecting corruption...");
         System.out.println("DEMO: Recovering from remaining good shards");
         logAction("SYSTEM", "RECOVER", patientId, "Recovered from attack", true);
+        
+        // Log the recovery
+        logChange("SYSTEM", patientId, "RECOVERY", "CORRUPTED_DATA", currentData);
     }
     
     /**
@@ -215,6 +282,18 @@ public class RaSeDemo {
             Files.lines(Path.of(AUDIT_LOG)).forEach(System.out::println);
         } catch (IOException e) {
             System.err.println("Failed to read audit log");
+        }
+    }
+    
+    /**
+     * Display change log
+     */
+    public void viewChangeLog() {
+        System.out.println("\n=== CHANGE LOG ===");
+        try {
+            Files.lines(Path.of(CHANGES_LOG)).forEach(System.out::println);
+        } catch (IOException e) {
+            System.err.println("Failed to read change log");
         }
     }
     
@@ -273,6 +352,8 @@ public class RaSeDemo {
                     case "audit":
                         if (parts[1].equals("viewlog")) {
                             viewAuditLog();
+                        } else if (parts[1].equals("viewchanges")) {
+                            viewChangeLog();
                         } else if (parts[1].equals("listpatients")) {
                             listPatients();
                         } else {
@@ -282,9 +363,13 @@ public class RaSeDemo {
                         
                     case "system":
                         if (parts[1].equals("setstate") && parts.length == 3) {
+                            SystemState oldState = currentState;
                             currentState = SystemState.valueOf(parts[2].toUpperCase());
                             System.out.println("DEMO: System state set to " + currentState);
                             logAction("SYSTEM", "STATE_CHANGE", "", "New state: " + currentState, true);
+                            
+                            // Log state change
+                            logChange("SYSTEM", "SYSTEM_STATE", "STATE_CHANGE", oldState.toString(), currentState.toString());
                         } else {
                             throw new IllegalArgumentException("Use: system setstate NORMAL|UNDER_ATTACK|RECOVERY");
                         }
@@ -306,6 +391,7 @@ public class RaSeDemo {
         scanner.close();
         System.out.println("DEMO: Shutting down. Audit log saved to " + AUDIT_LOG);
         System.out.println("DEMO: Patient records saved to " + PATIENT_RECORDS);
+        System.out.println("DEMO: Change log saved to " + CHANGES_LOG);
     }
     
     private void printHelp() {
@@ -314,6 +400,7 @@ public class RaSeDemo {
         System.out.println("  admin retrieve PATIENT_ID");
         System.out.println("  attacker corrupt PATIENT_ID");
         System.out.println("  audit viewlog");
+        System.out.println("  audit viewchanges");
         System.out.println("  audit listpatients");
         System.out.println("  system setstate NORMAL|UNDER_ATTACK|RECOVERY");
         System.out.println("  help");

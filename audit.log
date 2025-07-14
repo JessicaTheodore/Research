@@ -16,3 +16,19 @@ Format: [Timestamp] [User] [Action] [Status] [Details]
 [2025-07-14 15:19:38] [admin] [RETRIEVE] [FAILED] PATRIENT_Jessica - Patient not found
 [2025-07-14 15:20:01] [SYSTEM] [STATE_CHANGE] [SUCCESS]  - New state: NORMAL
 [2025-07-14 15:20:06] [admin] [RETRIEVE] [FAILED] PATRIENT_Jessica - Patient not found
+=== RaSe DEMO Audit Log ===
+Format: [Timestamp] [User] [Action] [Status] [Details]
+=================================
+[2025-07-14 17:43:04] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_Alice - Created 6 shards (4+2)
+[2025-07-14 17:43:04] [doctor] [STORE] [SUCCESS] PATIENT_Alice - CREATE - Data length: 32
+=== RaSe DEMO Audit Log ===
+Format: [Timestamp] [User] [Action] [Status] [Details]
+=================================
+[2025-07-14 18:03:18] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_Alice - Created 6 shards (4+2)
+[2025-07-14 18:03:18] [doctor] [STORE] [SUCCESS] PATIENT_Alice - UPDATE - Data length: 32
+[2025-07-14 18:03:33] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_Alice - Created 6 shards (4+2)
+[2025-07-14 18:03:33] [doctor] [STORE] [SUCCESS] PATIENT_Alice - UPDATE - Data length: 41
+[2025-07-14 18:03:55] [ATTACKER] [CORRUPT] [FAILED] PATIENT_Alice - Corrupted 2/6 shards
+[2025-07-14 18:03:55] [SYSTEM] [RECOVER] [SUCCESS] PATIENT_Alice - Recovered from attack
+[2025-07-14 18:04:07] [SYSTEM] [STATE_CHANGE] [SUCCESS]  - New state: UNDER_ATTACK
+[2025-07-14 18:04:26] [SYSTEM] [STATE_CHANGE] [SUCCESS]  - New state: NORMAL
