@@ -1,0 +1,11 @@
+=== RaSe DEMO Audit Log ===
+Format: [Timestamp] [User] [Action] [Status] [Details]
+=================================
+[2025-07-14 14:50:39] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_ID - Created 6 shards (4+2)
+[2025-07-14 14:50:39] [doctor] [STORE] [SUCCESS] PATIENT_ID - Data length: 6
+[2025-07-14 14:51:24] [SYSTEM] [SHARDING] [SUCCESS] PATIENT_ID - Created 6 shards (4+2)
+[2025-07-14 14:51:24] [doctor] [STORE] [SUCCESS] PATIENT_ID - Data length: 6
+[2025-07-14 14:51:40] [SYSTEM] [SHARDING] [SUCCESS] PATIENT1 - Created 6 shards (4+2)
+[2025-07-14 14:51:40] [doctor] [STORE] [SUCCESS] PATIENT1 - Data length: 10
+[2025-07-14 15:05:37] [ATTACKER] [CORRUPT] [FAILED] patient1 - Corrupted 2/6 shards
+[2025-07-14 15:05:37] [SYSTEM] [RECOVER] [SUCCESS] patient1 - Recovered from attack
