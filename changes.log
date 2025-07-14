@@ -1,0 +1,9 @@
+=== RaSe DEMO Change Tracking Log ===
+Format: [Timestamp] [Change#] [User] [Patient] [Action] [Previous] -> [New]
+=====================================================================
+[2025-07-14 18:03:18] [CHANGE#0001] [doctor] [PATIENT_Alice] [UPDATE] ["Initial diagnosis: Common cold"] -> ["Initial diagnosis: Common cold"]
+[2025-07-14 18:03:33] [CHANGE#0002] [doctor] [PATIENT_Alice] [UPDATE] ["Initial diagnosis: Common cold"] -> ["Updated diagnosis: Flu, prescribed rest"]
+[2025-07-14 18:03:55] [CHANGE#0003] [ATTACKER] [PATIENT_Alice] [CORRUPT_ATTEMPT] ["Updated diagnosis: Flu, prescribed rest"] -> [CORRUPTED_DATA]
+[2025-07-14 18:03:55] [CHANGE#0004] [SYSTEM] [PATIENT_Alice] [RECOVERY] [CORRUPTED_DATA] -> ["Updated diagnosis: Flu, prescribed rest"]
+[2025-07-14 18:04:07] [CHANGE#0005] [SYSTEM] [SYSTEM_STATE] [STATE_CHANGE] [NORMAL] -> [UNDER_ATTACK]
+[2025-07-14 18:04:26] [CHANGE#0006] [SYSTEM] [SYSTEM_STATE] [STATE_CHANGE] [UNDER_ATTACK] -> [NORMAL]
