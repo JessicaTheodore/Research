@@ -1,24 +1,15 @@
 import java.util.*;
-import java.security.SecureRandom;
+import java.security.*;
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.nio.file.*;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.util.stream.Collectors;
 
 /**
- * RaSe (Ransom Sentinel) Medical Record DEMO System
+ * RaSe Medical Record System DEMO
  * 
- * + Production: Uses complex math (Galois Fields, polynomial interpolation)  
- * - Demo: Uses string operations to visualize the flow
- * Simulates ransomware-resilient healthcare records with:
- * - Reed-Solomon sharding simulation
- * - Comprehensive audit logging
- * - Patient records stored in 'patient_records.sim' file
- * - Attack/failure simulation modes
- * - Change tracking with detailed modification logs
- * 
- * DEMO COMMANDS:
+ * COMMANDS:
  * 
  * 1. Store Patient Data:
  *    doctor store patient1 "BloodPressure: 120/80, Diagnosis: Hypertension"
@@ -45,271 +36,207 @@ import java.text.SimpleDateFormat;
  * 8. Exit:
  *    exit
  */
-
 public class RaSeDemo {
     // File paths
     private static final String AUDIT_LOG = "audit.log";
     private static final String PATIENT_RECORDS = "patient_records.sim";
     private static final String CHANGES_LOG = "changes.log";
     
-    // Formatting
-    private static final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    // Reed-Solomon config
+    private static final int DATA_SHARDS = 4;
+    private static final int PARITY_SHARDS = 2;
+    private static final int TOTAL_SHARDS = DATA_SHARDS + PARITY_SHARDS;
+    
+    // Shamir's Secret Sharing
+    private static final int SHAMIR_THRESHOLD = 3;
+    private static final int SHAMIR_TOTAL = 5;
     
     // System state
     private enum SystemState { NORMAL, UNDER_ATTACK, RECOVERY }
     private SystemState currentState = SystemState.NORMAL;
-    private int errorCounter = 0;
     
-    // Patient records simulation
-    private Map<String, String> patientRecords = new HashMap<>();
+    // Data storage
+    private Map<String, PatientRecord> patientRecords = new HashMap<>();
+    private Map<Integer, String> keyShares = new HashMap<>();
     
-    // Change tracking
-    private Map<String, String> previousRecords = new HashMap<>();
-    private int changeSequence = 0;
+    //Galois Field tables:  Reed-Solomon GF(2^8) tables
+private static final int GF_SIZE = 256;
+private static final int PRIMITIVE_POLY = 0x11D;
+private static final int[] GF_LOG = new int[GF_SIZE + 1];
+private static final int[] GF_EXP = new int[GF_SIZE * 2];
+
+static {
+    // Initialize Galois Field tables
+    int x = 1;
+    for (int i = 0; i < GF_SIZE; i++) {
+        GF_EXP[i] = x;
+        GF_EXP[i + GF_SIZE] = x;
+        GF_LOG[x] = i;
+        x <<= 1;
+        if ((x & GF_SIZE) != 0) {
+            x ^= PRIMITIVE_POLY;
+        }
+    }
+    GF_LOG[0] = GF_SIZE * 2;
+}
+
+    public static void main(String[] args) {
+        new RaSeDemo().runDemo();
+    }
+
+    private void initializeGaloisField() {
+        int x = 1;
+        for (int i = 0; i < GF_SIZE; i++) {
+            GF_EXP[i] = x;
+            GF_LOG[x] = i;
+            x <<= 1;
+            if ((x & GF_SIZE) != 0) {
+                x ^= PRIMITIVE_POLY;
+            }
+        }
+    }
+
+    private byte gfMul(byte a, byte b) {
+        if (a == 0 || b == 0) return 0;
+        return (byte) GF_EXP[(GF_LOG[a & 0xFF] + GF_LOG[b & 0xFF]) % (GF_SIZE - 1)];
+    }
+
+    // Reed-Solomon encoding
+    private List<String> rsEncode(String data) {
+    byte[] bytes = data.getBytes();
+    int shardSize = (bytes.length + DATA_SHARDS - 1) / DATA_SHARDS;
+    byte[][] shards = new byte[TOTAL_SHARDS][shardSize];
     
-    /**
-     * Initialize system files
-     */
-    public RaSeDemo() {
-        initializeFiles();
-        loadPatientRecords();
+    // Distribute data across shards
+    for (int i = 0; i < bytes.length; i++) {
+        shards[i % DATA_SHARDS][i / DATA_SHARDS] = bytes[i];
     }
     
-    private void initializeFiles() {
-        try {
-            // Create audit log header
-            System.out.println(System.currentTimeMillis()); //convert for time
-            
-            Files.writeString(Path.of(AUDIT_LOG), 
-                "=== RaSe DEMO Audit Log ===\n" +
-                "Format: [Timestamp] [User] [Action] [Status] [Details]\n" +
-                "=================================\n",
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-                
-            // Create empty patient records file if doesn't exist
-            if (!Files.exists(Path.of(PATIENT_RECORDS))) {
-                Files.writeString(Path.of(PATIENT_RECORDS), 
-                    "=== Simulated Patient Records ===\n",
-                    StandardOpenOption.CREATE);
+    // Calculate parity shards
+    for (int i = DATA_SHARDS; i < TOTAL_SHARDS; i++) {
+        for (int j = 0; j < shardSize; j++) {
+            byte value = 0;
+            for (int k = 0; k < DATA_SHARDS; k++) {
+                value ^= gfMul(shards[k][j], (byte) GF_EXP[i * k]);
             }
-            
-            // Create changes log header
-            if (!Files.exists(Path.of(CHANGES_LOG))) {
-                Files.writeString(Path.of(CHANGES_LOG),
-                    "=== RaSe DEMO Change Tracking Log ===\n" +
-                    "Format: [Timestamp] [Change#] [User] [Patient] [Action] [Previous] -> [New]\n" +
-                    "=====================================================================\n",
-                    StandardOpenOption.CREATE);
-            }
-        } catch (IOException e) {
-            System.err.println("Failed to initialize files: " + e.getMessage());
+            shards[i][j] = value;
         }
     }
     
-    /**
-     * Load existing patient records from simulation file
-     */
-    private void loadPatientRecords() {
-        try {
-            List<String> lines = Files.readAllLines(Path.of(PATIENT_RECORDS));
-            for (String line : lines) {
-                if (line.contains(":")) {
-                    String[] parts = line.split(":", 2);
-                    String patientId = parts[0].trim();
-                    String data = parts[1].trim();
-                    patientRecords.put(patientId, data);
-                    // Initialize previous records for change tracking
-                    previousRecords.put(patientId, data);
-                }
+    return Arrays.stream(shards)
+        .map(shard -> Base64.getEncoder().encodeToString(shard))
+        .collect(Collectors.toList());
+}
+
+    // Shamir's Secret Sharing
+    private Map<Integer, String> shamirSplit(String secret) {
+        SecureRandom random = new SecureRandom();
+        int[] coeffs = new int[SHAMIR_THRESHOLD - 1];
+        for (int i = 0; i < coeffs.length; i++) {
+            coeffs[i] = random.nextInt(Integer.MAX_VALUE);
+        }
+        
+        Map<Integer, String> shares = new HashMap<>();
+        for (int x = 1; x <= SHAMIR_TOTAL; x++) {
+            int y = secret.hashCode();
+            for (int i = 0; i < coeffs.length; i++) {
+                y += coeffs[i] * Math.pow(x, i + 1);
             }
-        } catch (IOException e) {
-            System.err.println("Warning: Could not load patient records");
+            shares.put(x, x + ":" + y);
+        }
+        return shares;
+    }
+
+    // Command implementations
+    private void storePatient(String user, String patientId, String data) {
+    try {
+        String previousData = patientRecords.containsKey(patientId) ? 
+            patientRecords.get(patientId).data : null;
+            
+        List<String> shards = rsEncode(data);
+        Map<Integer, String> shares = shamirSplit("KEY-" + System.currentTimeMillis());
+        
+        patientRecords.put(patientId, new PatientRecord(data, shards));
+        keyShares.putAll(shares);
+        
+        // Save to files
+        savePatientRecords();
+        logChange(user, patientId, "STORE", previousData, data);
+        logAction(user, "STORE", patientId, "Created " + shards.size() + " shards", true);
+        
+        System.out.println("Stored record for " + patientId);
+    } catch (Exception e) {
+        logAction(user, "STORE", patientId, "Failed: " + e.getMessage(), false);
+        System.err.println("Error: " + e.getMessage());
+    }
+}
+
+    private String retrievePatient(String user, String patientId) {
+        try {
+            PatientRecord record = patientRecords.get(patientId);
+            if (record == null) throw new Exception("Patient not found");
+            
+            if (keyShares.size() < SHAMIR_THRESHOLD) {
+                throw new SecurityException("Insufficient key shares");
+            }
+            
+            String reconstructed = new String(Base64.getDecoder().decode(record.shards.get(0))); // Simplified
+            logAction(user, "RETRIEVE", patientId, "Success", true);
+            return reconstructed;
+        } catch (Exception e) {
+            logAction(user, "RETRIEVE", patientId, "Failed: " + e.getMessage(), false);
+            return "ERROR: " + e.getMessage();
         }
     }
+
     
-    /**
-     * Log an action to the audit trail
-     */
+
     private void logAction(String user, String action, String patientId, String details, boolean success) {
-        String logEntry = String.format("[%s] [%s] [%s] [%s] %s - %s\n",
-            dateFormat.format(new Date()),
+        String log = String.format("[%d] [%s] [%s] [%s] %s - %s\n",
+            System.currentTimeMillis(),
             user,
             action,
             success ? "SUCCESS" : "FAILED",
             patientId,
             details);
-            
+        
         try {
-            Files.writeString(Path.of(AUDIT_LOG), logEntry, StandardOpenOption.APPEND);
-            System.out.println("LOG: " + logEntry.trim());
+            Files.writeString(Path.of(AUDIT_LOG), log, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
             System.err.println("Failed to write to audit log!");
         }
     }
+
+    private void logChange(String user, String patientId, String action, String oldData, String newData) {
+    String logEntry = String.format("[%d] [%s] [%s] [%s] %s -> %s\n",
+        System.currentTimeMillis(),
+        user,
+        patientId,
+        action,
+        oldData != null ? oldData : "NULL",
+        newData != null ? newData : "NULL");
     
-    /**
-     * Log a change to the change tracking log
-     */
-    private void logChange(String user, String patientId, String action, String previousData, String newData) {
-        changeSequence++;
-        
-        String changeEntry = String.format("[%s] [CHANGE#%04d] [%s] [%s] [%s] [%s] -> [%s]\n",
-            dateFormat.format(new Date()),
-            changeSequence,
-            user,
-            patientId,
-            action,
-            previousData != null ? previousData : "NULL",
-            newData != null ? newData : "NULL");
-            
-        try {
-            Files.writeString(Path.of(CHANGES_LOG), changeEntry, StandardOpenOption.APPEND);
-            System.out.println("CHANGE: " + changeEntry.trim());
-        } catch (IOException e) {
-            System.err.println("Failed to write to change log!");
-        }
+    try {
+        Files.writeString(Path.of(CHANGES_LOG), logEntry, 
+            StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+    } catch (IOException e) {
+        System.err.println("Failed to write to changes log!");
     }
-    
-    /**
-     * Simulate Reed-Solomon storage
-     */
-    private void simulateSharding(String patientId, String data) {
-        // In a real system, this would split data into shards with parity
-        System.out.println("DEMO: Splitting data for " + patientId + " into 4 data + 2 parity shards");
-        logAction("SYSTEM", "SHARDING", patientId, "Created 6 shards (4+2)", true);
+}
+
+private void savePatientRecords() {
+    try {
+        StringBuilder records = new StringBuilder("=== Simulated Patient Records ===\n");
+        patientRecords.forEach((id, record) -> 
+            records.append(id).append(":").append(record.data).append("\n"));
         
-        // Simulate storing shards in different locations
-        String[] locations = {"Node1", "Node2", "Node3"};
-        System.out.println("DEMO: Storing shards across " + Arrays.toString(locations));
+        Files.writeString(Path.of(PATIENT_RECORDS), records.toString());
+    } catch (IOException e) {
+        System.err.println("Failed to save patient records!");
     }
-    
-    /**
-     * Store patient data (demo version)
-     */
-    public void storePatientData(String user, String patientId, String data) {
-        // Check for attack state failures
-        if (currentState == SystemState.UNDER_ATTACK && ++errorCounter % 3 == 0) {
-            System.out.println("DEMO ERROR: Storage system unavailable (simulated attack)");
-            logAction(user, "STORE", patientId, "Failed - system under attack", false);
-            return;
-        }
-        
-        // Get previous data for change tracking
-        String previousData = patientRecords.get(patientId);
-        
-        // Determine action type
-        String action = previousData == null ? "CREATE" : "UPDATE";
-        
-        // Store in memory
-        patientRecords.put(patientId, data);
-        
-        // Log the change
-        logChange(user, patientId, action, previousData, data);
-        
-        // Update previous records tracking
-        previousRecords.put(patientId, data);
-        
-        // Simulate RS encoding
-        simulateSharding(patientId, data);
-        
-        // Update patient records file
-        try {
-            // Rewrite entire file to reflect current state
-            StringBuilder fileContent = new StringBuilder("=== Simulated Patient Records ===\n");
-            for (Map.Entry<String, String> entry : patientRecords.entrySet()) {
-                fileContent.append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
-            }
-            Files.writeString(Path.of(PATIENT_RECORDS), fileContent.toString());
-        } catch (IOException e) {
-            System.err.println("Warning: Could not update patient records file");
-        }
-        
-        System.out.println("DEMO: " + action + " record for " + patientId);
-        logAction(user, "STORE", patientId, action + " - Data length: " + data.length(), true);
-    }
-    
-    /**
-     * Retrieve patient data (demo version)
-     */
-    public String retrievePatientData(String user, String patientId) {
-        // Check for attack state failures
-        if (currentState == SystemState.UNDER_ATTACK && ++errorCounter % 4 == 0) {
-            System.out.println("DEMO ERROR: Retrieval failed (simulated attack)");
-            logAction(user, "RETRIEVE", patientId, "Failed - system under attack", false);
-            return null;
-        }
-        
-        String data = patientRecords.get(patientId);
-        if (data == null) {
-            logAction(user, "RETRIEVE", patientId, "Patient not found", false);
-            return "PATIENT_NOT_FOUND";
-        }
-        
-        // Simulate RS recovery
-        System.out.println("DEMO: Reconstructing data from shards for " + patientId);
-        logAction(user, "RETRIEVE", patientId, "Recovered " + data.length() + " bytes", true);
-        
-        return data;
-    }
-    
-    /**
-     * Simulate ransomware attack
-     */
-    public void simulateAttack(String patientId) {
-        System.out.println("DEMO: Simulating ransomware attack on " + patientId);
-        
-        // Corrupt 2 out of 6 shards (below recovery threshold)
-        System.out.println("DEMO: Corrupting 2 shards (still recoverable)");
-        logAction("ATTACKER", "CORRUPT", patientId, "Corrupted 2/6 shards", false);
-        
-        // Log the attack as a change attempt
-        String currentData = patientRecords.get(patientId);
-        logChange("ATTACKER", patientId, "CORRUPT_ATTEMPT", currentData, "CORRUPTED_DATA");
-        
-        // Demonstrate recovery
-        System.out.println("DEMO: System detecting corruption...");
-        System.out.println("DEMO: Recovering from remaining good shards");
-        logAction("SYSTEM", "RECOVER", patientId, "Recovered from attack", true);
-        
-        // Log the recovery
-        logChange("SYSTEM", patientId, "RECOVERY", "CORRUPTED_DATA", currentData);
-    }
-    
-    /**
-     * Display audit log
-     */
-    public void viewAuditLog() {
-        System.out.println("\n=== AUDIT LOG ===");
-        try {
-            Files.lines(Path.of(AUDIT_LOG)).forEach(System.out::println);
-        } catch (IOException e) {
-            System.err.println("Failed to read audit log");
-        }
-    }
-    
-    /**
-     * Display change log
-     */
-    public void viewChangeLog() {
-        System.out.println("\n=== CHANGE LOG ===");
-        try {
-            Files.lines(Path.of(CHANGES_LOG)).forEach(System.out::println);
-        } catch (IOException e) {
-            System.err.println("Failed to read change log");
-        }
-    }
-    
-    /**
-     * List all patient IDs
-     */
-    public void listPatients() {
-        System.out.println("\n=== PATIENT IDS ===");
-        patientRecords.keySet().forEach(System.out::println);
-    }
-    
-    /**
-     * Main demo loop
-     */
+}
+
+    // Demo CLI
     public void runDemo() {
         Scanner scanner = new Scanner(System.in);
         System.out.println("\n=== RaSe Medical Record DEMO ===");
@@ -320,7 +247,6 @@ public class RaSeDemo {
             String input = scanner.nextLine().trim();
             
             if (input.equalsIgnoreCase("exit")) break;
-            if (input.isEmpty()) continue;
             
             String[] parts = input.split(" ", 3);
             String command = parts[0].toLowerCase();
@@ -329,87 +255,69 @@ public class RaSeDemo {
                 switch (command) {
                     case "doctor":
                     case "admin":
-                        if (parts.length < 3) throw new IllegalArgumentException("Invalid command");
+                        if (parts.length < 3) throw new Exception("Invalid command");
                         String action = parts[1].toLowerCase();
                         String patientId = parts[2].split(" ")[0];
                         String data = parts.length > 2 ? parts[2].substring(patientId.length()).trim() : "";
                         
                         if (action.equals("store")) {
-                            storePatientData(parts[0], patientId, data);
+                            storePatient(parts[0], patientId, data);
                         } else if (action.equals("retrieve")) {
-                            String record = retrievePatientData(parts[0], patientId);
-                            System.out.println("RECORD: " + record);
+                            System.out.println(retrievePatient(parts[0], patientId));
                         } else {
-                            throw new IllegalArgumentException("Invalid action");
+                            throw new Exception("Invalid action");
                         }
                         break;
                         
                     case "attacker":
-                        if (!parts[1].equals("corrupt") || parts.length < 3) {
-                            throw new IllegalArgumentException("Use: attacker corrupt PATIENT_ID");
+                        if (parts[1].equals("corrupt")) {
+                            System.out.println("Simulating attack on " + parts[2]);
+                            logAction("ATTACKER", "CORRUPT", parts[2], "2 shards corrupted", false);
                         }
-                        simulateAttack(parts[2]);
                         break;
                         
                     case "audit":
                         if (parts[1].equals("viewlog")) {
-                            viewAuditLog();
-                        } else if (parts[1].equals("viewchanges")) {
-                            viewChangeLog();
-                        } else if (parts[1].equals("listpatients")) {
-                            listPatients();
-                        } else {
-                            throw new IllegalArgumentException("Invalid audit command");
+                            System.out.println("\n=== AUDIT LOG ===");
+                            Files.lines(Path.of(AUDIT_LOG)).forEach(System.out::println);
                         }
                         break;
                         
                     case "system":
-                        if (parts[1].equals("setstate") && parts.length == 3) {
-                            SystemState oldState = currentState;
+                        if (parts[1].equals("setstate")) {
                             currentState = SystemState.valueOf(parts[2].toUpperCase());
-                            System.out.println("DEMO: System state set to " + currentState);
-                            logAction("SYSTEM", "STATE_CHANGE", "", "New state: " + currentState, true);
-                            
-                            // Log state change
-                            logChange("SYSTEM", "SYSTEM_STATE", "STATE_CHANGE", oldState.toString(), currentState.toString());
-                        } else {
-                            throw new IllegalArgumentException("Use: system setstate NORMAL|UNDER_ATTACK|RECOVERY");
+                            System.out.println("System state: " + currentState);
                         }
                         break;
                         
-                    case "help":
-                        printHelp();
-                        break;
-                        
                     default:
-                        throw new IllegalArgumentException("Unknown command");
+                        printHelp();
                 }
             } catch (Exception e) {
                 System.out.println("Error: " + e.getMessage());
-                printHelp();
             }
         }
         
         scanner.close();
-        System.out.println("DEMO: Shutting down. Audit log saved to " + AUDIT_LOG);
-        System.out.println("DEMO: Patient records saved to " + PATIENT_RECORDS);
-        System.out.println("DEMO: Change log saved to " + CHANGES_LOG);
     }
-    
+
     private void printHelp() {
         System.out.println("\nAvailable Commands:");
         System.out.println("  doctor store PATIENT_ID \"DATA\"");
         System.out.println("  admin retrieve PATIENT_ID");
         System.out.println("  attacker corrupt PATIENT_ID");
         System.out.println("  audit viewlog");
-        System.out.println("  audit viewchanges");
-        System.out.println("  audit listpatients");
         System.out.println("  system setstate NORMAL|UNDER_ATTACK|RECOVERY");
-        System.out.println("  help");
         System.out.println("  exit");
     }
-    
-    public static void main(String[] args) {
-        new RaSeDemo().runDemo();
+
+    private static class PatientRecord {
+        String data;
+        List<String> shards;
+        
+        public PatientRecord(String data, List<String> shards) {
+            this.data = data;
+            this.shards = shards;
+        }
     }
 }
