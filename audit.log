@@ -5,3 +5,12 @@
 [1753134724193] [doctor] [STORE] [SUCCESS] PATIENT_ID - Created 6 shards
 [1753134726006] [doctor] [STORE] [SUCCESS] PATIENT_ID - Created 6 shards
 [1753134742774] [doctor] [STORE] [SUCCESS] Jessica - Created 6 shards
+[1753136946593] [doctor] [STORE] [SUCCESS] PATIENT_ID - Created 6 shards
+[1753136994341] [doctor] [STORE] [SUCCESS] Jess - Created 6 shards
+[1753137033912] [admin] [RETRIEVE] [SUCCESS] Jess - Success
+[1753137054722] [admin] [RETRIEVE] [SUCCESS] PATIENT_ID - Success
+[1753137057028] [admin] [RETRIEVE] [SUCCESS] PATIENT_ID - Success
+[1753137119653] [doctor] [STORE] [SUCCESS] patient1 - Created 6 shards
+[1753137352390] [doctor] [STORE] [SUCCESS] PATIENT_ID - Created 6 shards
+[1753137358274] [doctor] [STORE] [SUCCESS] PATIENT_ID - Created 6 shards
+[1753137386443] [doctor] [STORE] [SUCCESS] Dawit - Created 6 shards

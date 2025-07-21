@@ -5,9 +5,11 @@ import java.nio.file.*;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.stream.Collectors;
+import org.json.JSONObject;
+import org.json.JSONArray;
 
 /**
- * RaSe Medical Record System DEMO
+ * RaSe Medical Record System DEMO with JSON Storage
  * 
  * COMMANDS:
  * 
@@ -39,7 +41,7 @@ import java.util.stream.Collectors;
 public class RaSeDemo {
     // File paths
     private static final String AUDIT_LOG = "audit.log";
-    private static final String PATIENT_RECORDS = "patient_records.sim";
+    private static final String PATIENT_RECORDS = "patient_records.json";  // Changed to .json
     private static final String CHANGES_LOG = "changes.log";
     
     // Reed-Solomon config
@@ -59,41 +61,29 @@ public class RaSeDemo {
     private Map<String, PatientRecord> patientRecords = new HashMap<>();
     private Map<Integer, String> keyShares = new HashMap<>();
     
-    //Galois Field tables:  Reed-Solomon GF(2^8) tables
-private static final int GF_SIZE = 256;
-private static final int PRIMITIVE_POLY = 0x11D;
-private static final int[] GF_LOG = new int[GF_SIZE + 1];
-private static final int[] GF_EXP = new int[GF_SIZE * 2];
+    // Galois Field tables: Reed-Solomon GF(2^8) tables
+    private static final int GF_SIZE = 256;
+    private static final int PRIMITIVE_POLY = 0x11D;
+    private static final int[] GF_LOG = new int[GF_SIZE + 1];
+    private static final int[] GF_EXP = new int[GF_SIZE * 2];
 
-static {
-    // Initialize Galois Field tables
-    int x = 1;
-    for (int i = 0; i < GF_SIZE; i++) {
-        GF_EXP[i] = x;
-        GF_EXP[i + GF_SIZE] = x;
-        GF_LOG[x] = i;
-        x <<= 1;
-        if ((x & GF_SIZE) != 0) {
-            x ^= PRIMITIVE_POLY;
-        }
-    }
-    GF_LOG[0] = GF_SIZE * 2;
-}
-
-    public static void main(String[] args) {
-        new RaSeDemo().runDemo();
-    }
-
-    private void initializeGaloisField() {
+    static {
+        // Initialize Galois Field tables
         int x = 1;
         for (int i = 0; i < GF_SIZE; i++) {
             GF_EXP[i] = x;
+            GF_EXP[i + GF_SIZE] = x;
             GF_LOG[x] = i;
             x <<= 1;
             if ((x & GF_SIZE) != 0) {
                 x ^= PRIMITIVE_POLY;
             }
         }
+        GF_LOG[0] = GF_SIZE * 2;
+    }
+
+    public static void main(String[] args) {
+        new RaSeDemo().runDemo();
     }
 
     private byte gfMul(byte a, byte b) {
@@ -103,30 +93,30 @@ static {
 
     // Reed-Solomon encoding
     private List<String> rsEncode(String data) {
-    byte[] bytes = data.getBytes();
-    int shardSize = (bytes.length + DATA_SHARDS - 1) / DATA_SHARDS;
-    byte[][] shards = new byte[TOTAL_SHARDS][shardSize];
-    
-    // Distribute data across shards
-    for (int i = 0; i < bytes.length; i++) {
-        shards[i % DATA_SHARDS][i / DATA_SHARDS] = bytes[i];
-    }
-    
-    // Calculate parity shards
-    for (int i = DATA_SHARDS; i < TOTAL_SHARDS; i++) {
-        for (int j = 0; j < shardSize; j++) {
-            byte value = 0;
-            for (int k = 0; k < DATA_SHARDS; k++) {
-                value ^= gfMul(shards[k][j], (byte) GF_EXP[i * k]);
-            }
-            shards[i][j] = value;
+        byte[] bytes = data.getBytes();
+        int shardSize = (bytes.length + DATA_SHARDS - 1) / DATA_SHARDS;
+        byte[][] shards = new byte[TOTAL_SHARDS][shardSize];
+        
+        // Distribute data across shards
+        for (int i = 0; i < bytes.length; i++) {
+            shards[i % DATA_SHARDS][i / DATA_SHARDS] = bytes[i];
         }
+        
+        // Calculate parity shards
+        for (int i = DATA_SHARDS; i < TOTAL_SHARDS; i++) {
+            for (int j = 0; j < shardSize; j++) {
+                byte value = 0;
+                for (int k = 0; k < DATA_SHARDS; k++) {
+                    value ^= gfMul(shards[k][j], (byte) GF_EXP[i * k]);
+                }
+                shards[i][j] = value;
+            }
+        }
+        
+        return Arrays.stream(shards)
+            .map(shard -> Base64.getEncoder().encodeToString(shard))
+            .collect(Collectors.toList());
     }
-    
-    return Arrays.stream(shards)
-        .map(shard -> Base64.getEncoder().encodeToString(shard))
-        .collect(Collectors.toList());
-}
 
     // Shamir's Secret Sharing
     private Map<Integer, String> shamirSplit(String secret) {
@@ -149,27 +139,27 @@ static {
 
     // Command implementations
     private void storePatient(String user, String patientId, String data) {
-    try {
-        String previousData = patientRecords.containsKey(patientId) ? 
-            patientRecords.get(patientId).data : null;
+        try {
+            String previousData = patientRecords.containsKey(patientId) ? 
+                patientRecords.get(patientId).data : null;
+                
+            List<String> shards = rsEncode(data);
+            Map<Integer, String> shares = shamirSplit("KEY-" + System.currentTimeMillis());
             
-        List<String> shards = rsEncode(data);
-        Map<Integer, String> shares = shamirSplit("KEY-" + System.currentTimeMillis());
-        
-        patientRecords.put(patientId, new PatientRecord(data, shards));
-        keyShares.putAll(shares);
-        
-        // Save to files
-        savePatientRecords();
-        logChange(user, patientId, "STORE", previousData, data);
-        logAction(user, "STORE", patientId, "Created " + shards.size() + " shards", true);
-        
-        System.out.println("Stored record for " + patientId);
-    } catch (Exception e) {
-        logAction(user, "STORE", patientId, "Failed: " + e.getMessage(), false);
-        System.err.println("Error: " + e.getMessage());
+            patientRecords.put(patientId, new PatientRecord(data, shards));
+            keyShares.putAll(shares);
+            
+            // Save to JSON file
+            savePatientRecords();
+            logChange(user, patientId, "STORE", previousData, data);
+            logAction(user, "STORE", patientId, "Created " + shards.size() + " shards", true);
+            
+            System.out.println("Stored record for " + patientId);
+        } catch (Exception e) {
+            logAction(user, "STORE", patientId, "Failed: " + e.getMessage(), false);
+            System.err.println("Error: " + e.getMessage());
+        }
     }
-}
 
     private String retrievePatient(String user, String patientId) {
         try {
@@ -189,8 +179,6 @@ static {
         }
     }
 
-    
-
     private void logAction(String user, String action, String patientId, String details, boolean success) {
         String log = String.format("[%d] [%s] [%s] [%s] %s - %s\n",
             System.currentTimeMillis(),
@@ -208,38 +196,62 @@ static {
     }
 
     private void logChange(String user, String patientId, String action, String oldData, String newData) {
-    String logEntry = String.format("[%d] [%s] [%s] [%s] %s -> %s\n",
-        System.currentTimeMillis(),
-        user,
-        patientId,
-        action,
-        oldData != null ? oldData : "NULL",
-        newData != null ? newData : "NULL");
-    
-    try {
-        Files.writeString(Path.of(CHANGES_LOG), logEntry, 
-            StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-    } catch (IOException e) {
-        System.err.println("Failed to write to changes log!");
-    }
-}
-
-private void savePatientRecords() {
-    try {
-        StringBuilder records = new StringBuilder("=== Simulated Patient Records ===\n");
-        patientRecords.forEach((id, record) -> 
-            records.append(id).append(":").append(record.data).append("\n"));
+        String logEntry = String.format("[%d] [%s] [%s] [%s] %s -> %s\n",
+            System.currentTimeMillis(),
+            user,
+            patientId,
+            action,
+            oldData != null ? oldData : "NULL",
+            newData != null ? newData : "NULL");
         
-        Files.writeString(Path.of(PATIENT_RECORDS), records.toString());
-    } catch (IOException e) {
-        System.err.println("Failed to save patient records!");
+        try {
+            Files.writeString(Path.of(CHANGES_LOG), logEntry, 
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            System.err.println("Failed to write to changes log!");
+        }
     }
-}
 
-    // Demo CLI
+    // JSON-based patient records storage
+    private void savePatientRecords() {
+        try {
+            JSONObject jsonRecords = new JSONObject();
+            
+            // Convert all patient records to JSON
+            for (Map.Entry<String, PatientRecord> entry : patientRecords.entrySet()) {
+                jsonRecords.put(entry.getKey(), entry.getValue().toJson(false));
+            }
+            
+            // Write JSON to file with pretty print
+            Files.writeString(Path.of(PATIENT_RECORDS), jsonRecords.toString(2));
+        } catch (IOException e) {
+            System.err.println("Failed to save patient records!");
+            e.printStackTrace();
+        }
+    }
+
+    private void loadPatientRecords() {
+        try {
+            if (Files.exists(Path.of(PATIENT_RECORDS))) {
+                String jsonContent = Files.readString(Path.of(PATIENT_RECORDS));
+                JSONObject jsonRecords = new JSONObject(jsonContent);
+                
+                for (String patientId : jsonRecords.keySet()) {
+                    JSONObject recordJson = jsonRecords.getJSONObject(patientId);
+                    patientRecords.put(patientId, PatientRecord.fromJson(recordJson));
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to load patient records!");
+            e.printStackTrace();
+        }
+    }
+
+    // Demo 
     public void runDemo() {
+        loadPatientRecords(); // Load existing records at startup
         Scanner scanner = new Scanner(System.in);
-        System.out.println("\n=== RaSe Medical Record DEMO ===");
+        System.out.println("\n=== RaSe Medical Record DEMO (JSON Storage) ===");
         printHelp();
         
         while (true) {
@@ -280,6 +292,12 @@ private void savePatientRecords() {
                         if (parts[1].equals("viewlog")) {
                             System.out.println("\n=== AUDIT LOG ===");
                             Files.lines(Path.of(AUDIT_LOG)).forEach(System.out::println);
+                        } else if (parts[1].equals("viewchanges")) {
+                            System.out.println("\n=== CHANGE LOG ===");
+                            Files.lines(Path.of(CHANGES_LOG)).forEach(System.out::println);
+                        } else if (parts[1].equals("listpatients")) {
+                            System.out.println("\n=== PATIENT IDs ===");
+                            patientRecords.keySet().forEach(System.out::println);
                         }
                         break;
                         
@@ -307,6 +325,8 @@ private void savePatientRecords() {
         System.out.println("  admin retrieve PATIENT_ID");
         System.out.println("  attacker corrupt PATIENT_ID");
         System.out.println("  audit viewlog");
+        System.out.println("  audit viewchanges");
+        System.out.println("  audit listpatients");
         System.out.println("  system setstate NORMAL|UNDER_ATTACK|RECOVERY");
         System.out.println("  exit");
     }
@@ -318,6 +338,25 @@ private void savePatientRecords() {
         public PatientRecord(String data, List<String> shards) {
             this.data = data;
             this.shards = shards;
+        }
+        
+        public JSONObject toJson(boolean includeShards) {
+    JSONObject obj = new JSONObject();
+    obj.put("data", data);
+    if (includeShards) {
+        obj.put("shards", new JSONArray(shards));
+    }
+    return obj;
+}
+        
+        public static PatientRecord fromJson(JSONObject json) {
+            String data = json.getString("data");
+            JSONArray shardsArray = json.getJSONArray("shards");
+            List<String> shards = new ArrayList<>();
+            for (int i = 0; i < shardsArray.length(); i++) {
+                shards.add(shardsArray.getString(i));
+            }
+            return new PatientRecord(data, shards);
         }
     }
 }
