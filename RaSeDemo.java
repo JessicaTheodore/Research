@@ -78,6 +78,8 @@ public class RaSeDemo {
     private void initializeFiles() {
         try {
             // Create audit log header
+            System.out.println(System.currentTimeMillis()); //convert for time
+            
             Files.writeString(Path.of(AUDIT_LOG), 
                 "=== RaSe DEMO Audit Log ===\n" +
                 "Format: [Timestamp] [User] [Action] [Status] [Details]\n" +
